@@ -53,19 +53,19 @@
 
 (define-for-syntax (operator-type=? op1 op2)
   (case (list (syntax->datum op1) (syntax->datum op2))
-    (((+ +) (+ -) (- +) (- -))
+    (((add add) (add sub) (sub add) (sub sub))
      #t)
-    (((> >) (> <) (< >) (< <))
+    (((shiftl shiftr) (shiftr shiftl) (shiftl shiftl) (shiftr shiftr))
      #t)
-    (((\, \,) (\. \.))
+    (((read read) (put put))
      #t)
     (else #f)))
 (define-for-syntax (get-opp op)
   (case (syntax->datum op)
-    ((+) #'-)
-    ((-) #'+)
-    ((>) #'<)
-    ((<) #'>)))
+    ((add) #'sub)
+    ((sub) #'add)
+    ((shiftl) #'shiftr)
+    ((shiftr) #'shiftl)))
 (define-for-syntax (identifier=? id1 id2)
   (eq? (syntax->datum id1) (syntax->datum id2)))
 (define-for-syntax (opp? op1 op2)
@@ -102,13 +102,13 @@
   (syntax-parse stx
     #:literals (begin loop)
     [(begin step1:operator step ...)
-     (not current)
+     #:when (not current)
      (merge-operators
       #'(begin step ...)
       (cons #'step1.operator 1)
       result)]
     [(begin step1:operator step ...)
-     (operator-type=? (car current) #'step1.operator)
+     #:when (operator-type=? (car current) #'step1.operator)
      (merge-operators
       #'(begin step ...)
       (cons (car current) ((if (opp? (car current) #'step1.operator) sub1 add1) (cdr current)))
@@ -130,6 +130,9 @@
          #f
          (cons (merge-operators #'(loop sstep ...) #f null)
                (merge current result)))))]
+    [(begin)
+     #:when (not current)
+     (cons #'begin (reverse result))]
     [(begin)
      (cons #'begin (reverse (merge current result)))]
     [(loop step ...)
