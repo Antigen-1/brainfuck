@@ -18,7 +18,8 @@
    [(union #\+ #\- #\. #\,) (make-token 'SLOTOP (string->symbol lexeme) lexeme-srcloc #:skip? #f)]
    [#\[ (make-token 'LOOPSTART #f lexeme-srcloc #:skip? #f)]
    [#\] (make-token 'LOOPEND #f lexeme-srcloc #:skip? #f)]
-   [(char-complement keyword) (make-token 'OTHER #f lexeme-srcloc #:skip? #t)]))
+   [(char-complement keyword) (make-token 'OTHER #f lexeme-srcloc #:skip? #t)]
+   [(eof) (void)]))
 
 (define (make-token-producer port)
   (lambda () (tokenize port)))
