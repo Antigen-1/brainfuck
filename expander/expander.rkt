@@ -143,21 +143,25 @@
 
 ;; The optimizer
 (begin-for-syntax
+  (define-splicing-syntax-class add/sub
+    #:description "add/sub"
+    #:literals (add sub)
+    (pattern (~seq (add . n:integer)))
+    (pattern (~seq (sub . n:integer))))
   (define-splicing-syntax-class optimizer
     #:description "optimizer"
     #:literals (loop begin add sub shiftl shiftr read put)
-    (pattern (~seq (loop (~or (add . n) (sub . n))))
-             #:with optimized #'(#%app o:cur 0))))
+    (pattern (~seq _:add/sub
+                   (loop _:add/sub))
+             #:with optimized #'((o:cur 0)))
+    (pattern (~seq)
+             #:with optimized #'())))
 (define-for-syntax (optimize stx)
   (syntax-parse stx
     #:literals (loop begin)
     ((begin step0:optimizer step ...)
-     #`(begin step0.optimized #,(optimize #'(begin step ...))))
-    ((begin step0 step ...)
-     #`(begin step0 #,(optimize #'(begin step ...))))
+     #`(begin #,@#'step0.optimized #,(optimize #'(begin step ...))))
     ((loop step0:optimizer step ...)
-     #`(loop step0.optimized #,(optimize #'(begin step ...))))
-    ((loop step0 step ...)
-     #`(loop step0 #,(optimize #'(begin step ...))))
+     #`(loop #,@#'step0.optimized #,(optimize #'(begin step ...))))
     ((loop) #'(if (zero? (o:cur)) (void) (let loop () (loop))))
     ((begin) #'(begin))))
