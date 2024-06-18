@@ -113,4 +113,4 @@
     [(begin)
      (cons #'begin (reverse (cons current result)))]
     [(loop step ...)
-     (cons #'loop (merge-operators #'(begin step ...) #f null))]))
+     (cons #'loop (cdr (merge-operators #'(begin step ...) #f null)))]))
