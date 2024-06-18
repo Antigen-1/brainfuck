@@ -28,7 +28,7 @@
         (lp))))
 (define-syntax-parser #%module-begin
   ((_ program)
-   #`(r:#%module-begin #,(merge-operators (flatten-program #'program)))))
+   #`(r:#%module-begin #,((compose1 optimize merge-operators flatten-program) #'program))))
 
 ;; Hooks
 (define-syntax (program stx) (raise-syntax-error #f "Used outside the expander" stx))
@@ -140,3 +140,22 @@
 
     [(loop step ...)
      (cons #'loop (cdr (merge-operators #'(begin step ...) #f null)))]))
+
+;; The optimizer
+(begin-for-syntax
+  (define-splicing-syntax-class optimizer
+    #:description "optimizer"
+    #:literals (loop begin add sub shiftl shiftr read put)
+    (pattern (~seq (loop (~or (sub . n) (add . n))))
+             #:with optimized #'(o:cur 0))))
+(define-for-syntax (optimize stx)
+  (syntax-parse stx
+    #:literals (loop begin)
+    ((begin step0:optimizer step ...)
+     #'(begin step0.optimized step ...))
+    ((begin step ...)
+     #'(begin step ...))
+    ((loop step0:optimizer step ...)
+     #'(loop step0.optimized step ...))
+    ((loop step ...)
+     #'(loop step ...))))
