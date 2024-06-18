@@ -4,7 +4,8 @@
          (prefix-in r: racket/base)
          (for-syntax racket/base))
 (provide program loopstart loopend slotop ptrop unit
-         #%module-begin)
+         #%module-begin
+         #%app #%datum quote)
 
 ;; Interposition points
 (define-syntax-parse-rule (add . n:integer)
