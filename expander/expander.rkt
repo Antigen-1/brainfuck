@@ -168,7 +168,7 @@
 
     ;; Fallback
     (pattern (~seq st)
-             #:with optimized #'(st))))
+             #:with optimized #`(#,(optimize #'st)))))
 (define-for-syntax (optimize stx)
   (syntax-parse stx
     #:literals (loop n:begin)
@@ -177,4 +177,5 @@
     ((loop step0:optimizer step ...)
      #`(loop #,@#'step0.optimized #,(optimize #'(n:begin step ...))))
     ((loop) #'(if (zero? (o:cur)) (void) (let loop () (loop))))
-    ((n:begin) #'(n:begin))))
+    ((n:begin) #'(n:begin))
+    (ot #'ot)))
