@@ -19,7 +19,7 @@
   (o:shiftr n))
 (define-syntax-parse-rule (shiftl . n:integer)
   (o:shiftl n))
-(define-syntax-parse-rule (begin step ...) (let () step ... (void)))
+(define-syntax-parse-rule (begin step ...) (begin step ...))
 (define-syntax-parse-rule (loop step ...)
   (let lp ()
     step ...
@@ -28,7 +28,9 @@
         (lp))))
 (define-syntax-parser #%module-begin
   ((_ program)
-   #`(r:#%module-begin #,((compose1 optimize merge-operators flatten-program) #'program))))
+   #`(r:#%module-begin
+      (let ()
+        #,((compose1 optimize merge-operators flatten-program) #'program)))))
 
 ;; Hooks
 (define-syntax (program stx) (raise-syntax-error #f "Used outside the expander" stx))
@@ -171,8 +173,8 @@
   (syntax-parse stx
     #:literals (loop begin)
     ((begin step0:optimizer step ...)
-     #`(begin #,@#'step0.optimized #,(optimize #'(begin step ...))))
+     (cons #'begin #`(#,@#'step0.optimized #,(optimize #'(begin step ...)))))
     ((loop step0:optimizer step ...)
-     #`(loop #,@#'step0.optimized #,(optimize #'(begin step ...))))
+     (cons #'loop #`(#,@#'step0.optimized #,(optimize #'(begin step ...)))))
     ((loop) #'(if (zero? (o:cur)) (void) (let loop () (loop))))
     ((begin) #'(begin))))
