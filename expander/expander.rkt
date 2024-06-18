@@ -1,10 +1,9 @@
 #lang racket/base
 (require syntax/parse/define
          (prefix-in o: "data.rkt")
-         (prefix-in r: racket/base)
          (for-syntax racket/base))
 (provide program loopstart loopend slotop ptrop unit
-         #%module-begin)
+         (rename-out (n:#%module-begin #%module-begin)))
 
 ;; Interposition points
 (define-syntax-parse-rule (add . n:integer)
@@ -19,16 +18,16 @@
   (o:shiftr n))
 (define-syntax-parse-rule (shiftl . n:integer)
   (o:shiftl n))
-(define-syntax-parse-rule (begin step ...) (begin step ...))
+(define-syntax-parse-rule (n:begin step ...) (begin step ...))
 (define-syntax-parse-rule (loop step ...)
   (let lp ()
     step ...
     (if (zero? (o:cur))
         (void)
         (lp))))
-(define-syntax-parser #%module-begin
+(define-syntax-parser n:#%module-begin
   ((_ program)
-   #`(r:#%module-begin
+   #`(#%module-begin
       (let ()
         #,((compose1 optimize merge-operators flatten-program) #'program)))))
 
@@ -41,16 +40,16 @@
 (define-syntax (unit stx) (raise-syntax-error #f "Used outside the expander" stx))
 
 ;; Remove program, unit, loopstart and loopend
-;; Introduce begin and loop
+;; Introduce n:begin and loop
 (define-for-syntax (flatten-program stx)
   (syntax-parse stx
     #:literals (program loopstart loopend unit)
     [(program u ...)
-     (cons #'begin (map (lambda (u) (flatten-program u)) (syntax->list #'(u ...))))]
+     #`(n:begin #,@(map (lambda (u) (flatten-program u)) (syntax->list #'(u ...))))]
     [(unit (loopstart _) ot ... (loopend _))
-     (cons #'loop (map flatten-program (syntax->list #'(ot ...))))]
+     #`(loop #,@(map flatten-program (syntax->list #'(ot ...))))]
     [(unit ot ...)
-     (cons #'begin (map flatten-program (syntax->list #'(ot ...))))]
+     #`(n:begin #,@(map flatten-program (syntax->list #'(ot ...))))]
     [ot #'ot]))
 
 (define-for-syntax (operator-type=? op1 op2)
@@ -91,56 +90,58 @@
                ((<) #'shiftl)))))
 ;; Remove slotop and ptrop
 ;; Introduce add, sub, read, put, shiftr and shiftl
-(define-for-syntax (merge-operators stx (current #f) (result null))
-  (define (merge v r)
-    (let ((op (car current))
-          (cnt (cdr current)))
-      (if (< cnt 0)
-          (cons (cons (get-opp op) (list #'quote (- cnt))) r)
-          (if (zero? cnt)
-              r
-              (cons (cons (car v) (list #'quote (cdr v))) r)))))
+(define-for-syntax (merge-operators stx (current #f) (count 0) (result null))
+  (define (merge cur cnt r)
+    (if (< cnt 0)
+        (cons (cons (get-opp cur) (list #'quote (- cnt))) r)
+        (if (zero? cnt)
+            r
+            (cons (cons cur (list #'quote cnt)) r))))
   (syntax-parse stx
-    #:literals (begin loop)
-    [(begin step1:operator step ...)
+    #:literals (n:begin loop)
+    [(n:begin step1:operator step ...)
      #:when (not current)
      (merge-operators
-      #'(begin step ...)
-      (cons #'step1.operator 1)
+      #'(n:begin step ...)
+      #'step1.operator
+      1
       result)]
-    [(begin step1:operator step ...)
-     #:when (operator-type=? (car current) #'step1.operator)
+    [(n:begin step1:operator step ...)
+     #:when (operator-type=? current #'step1.operator)
      (merge-operators
-      #'(begin step ...)
-      (cons (car current) ((if (opp? (car current) #'step1.operator) sub1 add1) (cdr current)))
+      #'(n:begin step ...)
+      current
+      ((if (opp? current #'step1.operator) sub1 add1) count)
       result)]
-    [(begin step1:operator step ...)
+    [(n:begin step1:operator step ...)
      (merge-operators
-      #'(begin step ...)
-      (cons #'step1.operator 1)
-      (merge current result))]
+      #'(n:begin step ...)
+      #'step1.operator
+      1
+      (merge current count result))]
 
-    [(begin step1 step ...)
+    [(n:begin step1 step ...)
      (syntax-parse #'step1
-       #:literals (begin loop)
-       ((begin sstep ...)
-        (merge-operators #'(begin sstep ... step ...)
-                         current result))
+       #:literals (n:begin loop)
+       ((n:begin sstep ...)
+        (merge-operators #'(n:begin sstep ... step ...)
+                         current count result))
        ((loop sstep ...)
         (merge-operators
-         #'(begin step ...)
+         #'(n:begin step ...)
          #f
-         (cons (merge-operators #'(loop sstep ...) #f null)
-               (if current (merge current result) result)))))]
+         0
+         (cons (merge-operators #'(loop sstep ...) #f 0 null)
+               (if current (merge current count result) result)))))]
 
-    [(begin)
+    [(n:begin)
      #:when (not current)
-     (cons #'begin (reverse result))]
-    [(begin)
-     (cons #'begin (reverse (merge current result)))]
+     #`(n:begin #,@(reverse result))]
+    [(n:begin)
+     #`(n:begin #,@(reverse (merge current count result)))]
 
     [(loop step ...)
-     (cons #'loop (cdr (merge-operators #'(begin step ...) #f null)))]))
+     #`(loop #,@(cdr (syntax-e (merge-operators #'(n:begin step ...) #f 0 null))))]))
 
 ;; The optimizer
 (begin-for-syntax
@@ -156,7 +157,7 @@
 
   (define-splicing-syntax-class optimizer
     #:description "optimizer"
-    #:literals (loop begin add sub shiftl shiftr read put)
+    #:literals (loop n:begin add sub shiftl shiftr read put)
     (pattern (~seq _:maybe-add/sub
                    (loop _:add/sub)
                    post:maybe-add/sub)
@@ -166,14 +167,14 @@
                  #'post))
 
     ;; Fallback
-    (pattern (~seq)
-             #:with optimized #'())))
+    (pattern (~seq st)
+             #:with optimized #'(st))))
 (define-for-syntax (optimize stx)
   (syntax-parse stx
-    #:literals (loop begin)
-    ((begin step0:optimizer step ...)
-     #`(begin #,@#'step0.optimized #,(optimize #'(begin step ...))))
+    #:literals (loop n:begin)
+    ((n:begin step0:optimizer step ...)
+     #`(n:begin #,@#'step0.optimized #,(optimize #'(n:begin step ...))))
     ((loop step0:optimizer step ...)
-     #`(loop #,@#'step0.optimized #,(optimize #'(begin step ...))))
+     #`(loop #,@#'step0.optimized #,(optimize #'(n:begin step ...))))
     ((loop) #'(if (zero? (o:cur)) (void) (let loop () (loop))))
-    ((begin) #'(begin))))
+    ((n:begin) #'(n:begin))))
