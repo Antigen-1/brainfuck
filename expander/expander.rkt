@@ -118,6 +118,7 @@
       #'(begin step ...)
       (cons #'step1.operator 1)
       (merge current result))]
+
     [(begin step1 step ...)
      (syntax-parse #'step1
        #:literals (begin loop)
@@ -129,11 +130,13 @@
          #'(begin step ...)
          #f
          (cons (merge-operators #'(loop sstep ...) #f null)
-               (merge current result)))))]
+               (if current (merge current result) result)))))]
+
     [(begin)
      #:when (not current)
      (cons #'begin (reverse result))]
     [(begin)
      (cons #'begin (reverse (merge current result)))]
+
     [(loop step ...)
      (cons #'loop (cdr (merge-operators #'(begin step ...) #f null)))]))
