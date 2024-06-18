@@ -4,8 +4,7 @@
          (prefix-in r: racket/base)
          (for-syntax racket/base))
 (provide program loopstart loopend slotop ptrop unit
-         #%module-begin
-         #%app #%datum quote)
+         #%module-begin)
 
 ;; Interposition points
 (define-syntax-parse-rule (add . n:integer)
@@ -147,7 +146,9 @@
   (define-splicing-syntax-class optimizer
     #:description "optimizer"
     #:literals (loop begin add sub shiftl shiftr read put)
-    (pattern (~seq (loop (~or (sub . n) (add . n))))
+    (pattern (~seq (loop (sub . n)))
+             #:with optimized #'(o:cur 0))
+    (pattern (~seq (loop (add . n)))
              #:with optimized #'(o:cur 0))))
 (define-for-syntax (optimize stx)
   (syntax-parse stx
