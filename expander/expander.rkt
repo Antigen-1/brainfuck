@@ -148,12 +148,23 @@
     #:literals (add sub)
     (pattern (~seq (add . n:integer)))
     (pattern (~seq (sub . n:integer))))
+  (define-splicing-syntax-class maybe-add/sub
+    #:description "maybe-add/sub"
+    (pattern (~seq add/sub:add/sub))
+    (pattern (~seq)))
+
   (define-splicing-syntax-class optimizer
     #:description "optimizer"
     #:literals (loop begin add sub shiftl shiftr read put)
-    (pattern (~seq _:add/sub
-                   (loop _:add/sub))
-             #:with optimized #'((o:cur 0)))
+    (pattern (~seq _:maybe-add/sub
+                   (loop _:add/sub)
+                   post:maybe-add/sub)
+             #:with optimized
+             (if (null? (syntax->datum #'post))
+                 #'((o:cur 0))
+                 #'post))
+
+    ;; Fallback
     (pattern (~seq)
              #:with optimized #'())))
 (define-for-syntax (optimize stx)
