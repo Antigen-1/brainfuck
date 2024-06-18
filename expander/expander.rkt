@@ -96,11 +96,10 @@
     (let ((op (car current))
           (cnt (cdr current)))
       (if (< cnt 0)
-          (cons (cons (get-opp op) (- cnt))
-                r)
+          (cons (cons (get-opp op) (list #'quote (- cnt))) r)
           (if (zero? cnt)
               r
-              (cons v r)))))
+              (cons (cons (car v) (list #'quote (cdr v))) r)))))
   (syntax-parse stx
     #:literals (begin loop)
     [(begin step1:operator step ...)
@@ -145,11 +144,11 @@
 
 ;; The optimizer
 (begin-for-syntax
-  (define-splicing-syntax-class add/sub
+  (define-syntax-class add/sub
     #:description "add/sub"
     #:literals (add sub)
-    (pattern (~seq (add . n:integer)))
-    (pattern (~seq (sub . n:integer))))
+    (pattern (add . _))
+    (pattern (sub . _)))
   (define-splicing-syntax-class maybe-add/sub
     #:description "maybe-add/sub"
     (pattern (~seq add/sub:add/sub))
@@ -173,8 +172,8 @@
   (syntax-parse stx
     #:literals (loop begin)
     ((begin step0:optimizer step ...)
-     (cons #'begin #`(#,@#'step0.optimized #,(optimize #'(begin step ...)))))
+     #`(begin #,@#'step0.optimized #,(optimize #'(begin step ...))))
     ((loop step0:optimizer step ...)
-     (cons #'loop #`(#,@#'step0.optimized #,(optimize #'(begin step ...)))))
+     #`(loop #,@#'step0.optimized #,(optimize #'(begin step ...))))
     ((loop) #'(if (zero? (o:cur)) (void) (let loop () (loop))))
     ((begin) #'(begin))))
