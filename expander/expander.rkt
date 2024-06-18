@@ -19,7 +19,7 @@
   (o:shiftr n))
 (define-syntax-parse-rule (shiftl . n:integer)
   (o:shiftl n))
-(define-syntax-parse-rule (begin step ...) (r:begin step ...))
+(define-syntax-parse-rule (begin step ...) (let () step ...))
 (define-syntax-parse-rule (loop step ...)
   (let lp ()
     step ...
