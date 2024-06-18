@@ -80,13 +80,13 @@
 ;; Introduce add, sub, read, put, shiftr and shiftl
 (define-for-syntax (merge-operators stx (current #f) (result null))
   (syntax-parse stx
-    #:literals (slotop ptrop begin loop)
+    #:literals (begin loop)
     [(begin step1:operator step ...)
      (not current)
      (merge-operators
       #'(begin step ...)
       (cons #'step1.operator 1)
-      null)]
+      result)]
     [(begin step1:operator step ...)
      (operator=? (car current) #'step1.operator)
      (merge-operators
@@ -98,6 +98,18 @@
       #'(begin step ...)
       (cons #'step1.operator 1)
       (cons current result))]
+    [(begin step1 step ...)
+     (syntax-parse #'step1
+       #:literals (begin loop)
+       ((begin sstep ...)
+        (merge-operators #'(begin sstep ... step ...)
+                         current result))
+       ((loop sstep ...)
+        (merge-operators
+         #'(begin step ...)
+         #f
+         (cons (merge-operators #'(loop sstep ...) #f null)
+               (cons current result)))))]
     [(begin)
      (cons #'begin (reverse (cons current result)))]
     [(loop step ...)
