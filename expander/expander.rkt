@@ -93,10 +93,10 @@
 (define-for-syntax (merge-operators stx (current #f) (count 0) (result null))
   (define (merge cur cnt r)
     (if (< cnt 0)
-        (cons (cons (get-opp cur) (list #'quote (- cnt))) r)
+        (cons (cons (get-opp cur) (- cnt)) r)
         (if (zero? cnt)
             r
-            (cons (cons cur (list #'quote cnt)) r))))
+            (cons (cons cur cnt) r))))
   (syntax-parse stx
     #:literals (n:begin loop)
     [(n:begin step1:operator step ...)
