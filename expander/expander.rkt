@@ -51,7 +51,7 @@
      (cons #'begin (map flatten-program (syntax->list #'(ot ...))))]
     [ot #'ot]))
 
-(define-for-syntax (operator=? op1 op2)
+(define-for-syntax (operator-type=? op1 op2)
   (case (list (syntax->datum op1) (syntax->datum op2))
     (((+ +) (+ -) (- +) (- -))
      #t)
@@ -60,6 +60,17 @@
     (((\, \,) (\. \.))
      #t)
     (else #f)))
+(define-for-syntax (get-opp op)
+  (case (syntax->datum op)
+    ((+) #'-)
+    ((-) #'+)
+    ((>) #'<)
+    ((<) #'>)))
+(define-for-syntax (identifier=? id1 id2)
+  (eq? (syntax->datum id1) (syntax->datum id2)))
+(define-for-syntax (opp? op1 op2)
+  (and (operator-type=? op1 op2)
+       (not (identifier=? op1 op2))))
 (begin-for-syntax
   (define-syntax-class operator
     #:description "brainfuck operator"
@@ -79,6 +90,15 @@
 ;; Remove slotop and ptrop
 ;; Introduce add, sub, read, put, shiftr and shiftl
 (define-for-syntax (merge-operators stx (current #f) (result null))
+  (define (merge v r)
+    (let ((op (car current))
+          (cnt (cdr current)))
+      (if (< cnt 0)
+          (cons (cons (get-opp op) (- cnt))
+                r)
+          (if (zero? cnt)
+              r
+              (cons v r)))))
   (syntax-parse stx
     #:literals (begin loop)
     [(begin step1:operator step ...)
@@ -88,16 +108,16 @@
       (cons #'step1.operator 1)
       result)]
     [(begin step1:operator step ...)
-     (operator=? (car current) #'step1.operator)
+     (operator-type=? (car current) #'step1.operator)
      (merge-operators
       #'(begin step ...)
-      (cons (car current) (add1 (cdr current)))
+      (cons (car current) ((if (opp? (car current) #'step1.operator) sub1 add1) (cdr current)))
       result)]
     [(begin step1:operator step ...)
      (merge-operators
       #'(begin step ...)
       (cons #'step1.operator 1)
-      (cons current result))]
+      (merge current result))]
     [(begin step1 step ...)
      (syntax-parse #'step1
        #:literals (begin loop)
@@ -109,8 +129,8 @@
          #'(begin step ...)
          #f
          (cons (merge-operators #'(loop sstep ...) #f null)
-               (cons current result)))))]
+               (merge current result)))))]
     [(begin)
-     (cons #'begin (reverse (cons current result)))]
+     (cons #'begin (reverse (merge current result)))]
     [(loop step ...)
      (cons #'loop (cdr (merge-operators #'(begin step ...) #f null)))]))
