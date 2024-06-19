@@ -206,10 +206,11 @@
     #:description "loops without shifts (like [-[+]])"
     #:literals (loop)
     (pattern (loop (~or _:add/sub _:loop-without-shift) ...)))
-  (define-syntax-class reset-loop
-    #:description "loops that simply reset the current value (like [[-]])"
+  (define-splicing-syntax-class reset-loops
+    #:description "loops that simply reset the current value (like [[-]][-])"
     #:literals (loop)
-    (pattern (loop (~or _:add/sub _:reset-loop))))
+    (pattern (~seq (loop _:add/sub)))
+    (pattern (~seq (loop _:reset-loops) ...+)))
 
   (define-syntax (cls->pred stx)
     (syntax-parse stx
@@ -274,7 +275,7 @@
     #:description "optimizer"
     #:literals (loop n:begin add sub shiftl shiftr read put)
     (pattern (~seq _:maybe-add/sub
-                   _:reset-loop
+                   _:reset-loops
                    post:maybe-add/sub)
              #:with optimized
              (if (null? (syntax->datum #'post))
@@ -293,7 +294,7 @@
                    #,r
                    (#,((compose1 optimize merge-operators)
                        #`(n:begin #,@(apply append blocks))))))))
-    (pattern (~seq (loop st ... _:reset-loop))
+    (pattern (~seq (loop st ... _:reset-loops))
              #:with optimized #'((loop/once st ...)))
 
     ;; Fallback
