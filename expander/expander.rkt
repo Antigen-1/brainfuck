@@ -21,11 +21,11 @@
   (o:shiftl n))
 (define-syntax-parse-rule (n:begin step ...) (begin step ...))
 (define-syntax-parse-rule (loop step ...)
-  (let lp ()
-    step ...
-    (if (zero? (o:cur))
-        (void)
-        (lp))))
+  (if (zero? (o:cur))
+      (void)
+      (let lp ()
+        step ...
+        (if (zero? (o:cur)) (void) (lp)))))
 (define-syntax-parser n:#%module-begin
   ((_ program)
    #`(#%module-begin
@@ -36,17 +36,22 @@
   (o:cur 0))
 (define-syntax-parser loop/counter
   ((_ 0 (body ...))
-   #'(let lp ()
-       body ...
-       (lp)))
+   #'(if (zero? (o:cur))
+         (void)
+         (let lp ()
+           body ...
+           (lp))))
   ;; This offset can be negative
   ((_ offset (body ...))
-   #'(let lp ((v (o:cur)))
-       (define nv (+ v offset))
-       body ...
-       (if (zero? nv)
-           (reset)
-           (lp nv)))))
+   #'(let ((v (o:cur)))
+       (if (zero? v)
+           (void)
+           (let lp ((v v))
+             (let ((nv (+ v offset)))
+               body ...
+               (if (zero? nv)
+                   (reset)
+                   (lp nv))))))))
 
 ;; Hooks
 (define-syntax (program stx) (raise-syntax-error #f "Used outside the expander" stx))
