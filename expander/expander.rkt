@@ -1,7 +1,8 @@
 #lang racket/base
 (require syntax/parse/define
          (prefix-in o: "data.rkt")
-         (for-syntax racket/base))
+         (for-syntax racket/base syntax/parse/define)
+         (for-meta 2 racket/base))
 (provide program loopstart loopend slotop ptrop unit
          (rename-out (n:#%module-begin #%module-begin)))
 
@@ -30,6 +31,22 @@
    #`(#%module-begin
       (let ()
         #,((compose1 optimize merge-operators flatten-program) #'program)))))
+;; Optimized Interposition points
+(define-syntax-parse-rule (reset)
+  (o:cur 0))
+(define-syntax-parser loop/counter
+  ((_ 0 (body ...))
+   #'(let lp ()
+       body ...
+       (lp)))
+  ;; This offset can be negative
+  ((_ offset (body ...))
+   #'(let lp ((v (o:cur)))
+       (define nv (+ v offset))
+       body ...
+       (if (zero? nv)
+           (reset)
+           (lp nv)))))
 
 ;; Hooks
 (define-syntax (program stx) (raise-syntax-error #f "Used outside the expander" stx))
@@ -148,12 +165,51 @@
   (define-syntax-class add/sub
     #:description "add/sub"
     #:literals (add sub)
-    (pattern (add . _))
-    (pattern (sub . _)))
+    (pattern (add . n:integer) #:with offset #'n)
+    (pattern (sub . n:integer) #:with offset #`#,(- (syntax->datum #'n))))
   (define-splicing-syntax-class maybe-add/sub
     #:description "maybe-add/sub"
     (pattern (~seq add/sub:add/sub))
     (pattern (~seq)))
+  (define-syntax-class shift
+    #:description "shiftl or shiftr"
+    #:literals (shiftl shiftr)
+    (pattern (shiftl . n:integer) #:with offset #`#,(- (syntax->datum #'n)))
+    (pattern (shiftr . n:integer) #:with offset #'n))
+  (define-syntax-class pure
+    #:description "steps without IO"
+    (pattern _:add/sub)
+    (pattern _:shift))
+
+  (define-syntax (cls->pred stx)
+    (syntax-parse stx
+      ((_ cls)
+       (with-syntax ((id (datum->syntax
+                          #'stx
+                          (string->symbol
+                           (string-append
+                            "_:"
+                            (symbol->string (syntax->datum #'cls)))))))
+         #'(lambda (stx)
+             (syntax-parse stx
+               (id #t)
+               (_ #f)))))))
+  (define-syntax (get-offset stx)
+    (syntax-parse stx
+      ((_ cls s)
+       (with-syntax ((id (datum->syntax
+                          #'stx
+                          (string->symbol
+                           (string-append
+                            "op:"
+                            (symbol->string (syntax->datum #'cls)))))))
+         #'(syntax-parse s
+             (id (syntax->datum #'op.offset)))))))
+
+  (define (shift? stx)
+    ((cls->pred shift) stx))
+  (define (add/sub? stx)
+    ((cls->pred add/sub) stx))
 
   (define-splicing-syntax-class optimizer
     #:description "optimizer"
@@ -163,19 +219,46 @@
                    post:maybe-add/sub)
              #:with optimized
              (if (null? (syntax->datum #'post))
-                 #'((o:cur 0))
+                 #'((reset))
                  #'post))
+    (pattern (~seq (loop pre:maybe-add/sub
+                         stt:shift
+                         st:pure ...
+                         end:shift
+                         post:maybe-add/sub))
+             #:when (let* ((sts (syntax->list #'(stt st ... end))))
+                      (for/fold ((cnt 0)
+                                 (first? #t)
+                                 #:result (and cnt (zero? cnt) (not first?)))
+                                ((st (in-list sts)))
+                        (values
+                         (and cnt
+                              ;; The current value must be strictly used as a counter
+                              (or first? (not (zero? cnt)))
+                              (or (and (add/sub? st) cnt)
+                                  (and (shift? st)
+                                       (+ cnt (get-offset shift st)))))
+                         #f)))
+             #:with optimized
+             (let* ((pre-and-post (append (syntax->list #'pre)
+                                          (syntax->list #'post)))
+                    (r (foldl (lambda (st cnt) (+ cnt (get-offset add/sub st))) 0 pre-and-post)))
+               #`((loop/counter #,r (stt st ... end)))))
 
     ;; Fallback
+    (pattern (~seq (loop st ...))
+             #:with optimized #`((loop #,@(map optimize (syntax->list #'(st ...))))))
+    (pattern (~seq (begin st ...))
+             #:with optimized #`((begin #,@(map optimize (syntax->list #'(st ...))))))
     (pattern (~seq st)
              #:with optimized #`(#,(optimize #'st)))))
 (define-for-syntax (optimize stx)
   (syntax-parse stx
     #:literals (loop n:begin)
+    ((loop) #'(if (zero? (o:cur)) (void) (let loop () (loop))))
+    ((n:begin) #'(n:begin))
     ((n:begin step0:optimizer step ...)
      #`(n:begin #,@#'step0.optimized #,(optimize #'(n:begin step ...))))
     ((loop step0:optimizer step ...)
      #`(loop #,@#'step0.optimized #,(optimize #'(n:begin step ...))))
-    ((loop) #'(if (zero? (o:cur)) (void) (let loop () (loop))))
-    ((n:begin) #'(n:begin))
     (ot #'ot)))
