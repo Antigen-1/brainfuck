@@ -6,18 +6,24 @@
 (provide program loopstart loopend slotop ptrop unit
          (rename-out (n:#%module-begin #%module-begin)))
 
+(begin-for-syntax
+  (define-syntax-class
+    count
+    #:description "count"
+    (pattern n #:when (exact-positive-integer? (syntax->datum #'n)))))
+
 ;; Interposition points
-(define-syntax-parse-rule (add . n:integer)
+(define-syntax-parse-rule (add . n:count)
   (o:add n))
-(define-syntax-parse-rule (sub . n:integer)
+(define-syntax-parse-rule (sub . n:count)
   (o:sub n))
-(define-syntax-parse-rule (read . n:integer)
+(define-syntax-parse-rule (read . n:count)
   (o:read n))
-(define-syntax-parse-rule (put . n:integer)
+(define-syntax-parse-rule (put . n:count)
   (o:put n))
-(define-syntax-parse-rule (shiftr . n:integer)
+(define-syntax-parse-rule (shiftr . n:count)
   (o:shiftr n))
-(define-syntax-parse-rule (shiftl . n:integer)
+(define-syntax-parse-rule (shiftl . n:count)
   (o:shiftl n))
 (define-syntax-parse-rule (n:begin step ...) (begin step ...))
 (define-syntax-parse-rule (loop step ...)
@@ -103,6 +109,7 @@
     #:description "brainfuck operator"
     #:literals (slotop ptrop)
     (pattern (slotop op)
+             #:with cnt #'1
              #:with operator
              (case (syntax->datum #'op)
                ((+) #'add)
@@ -110,12 +117,18 @@
                ((\,) #'read)
                ((\.) #'put)))
     (pattern (ptrop op)
+             #:with cnt #'1
              #:with operator
              (case (syntax->datum #'op)
                ((>) #'shiftr)
-               ((<) #'shiftl)))))
+               ((<) #'shiftl)))
+    ;; Used in the optimizer
+    (pattern (op . n:count)
+             #:with cnt #'n
+             #:with operator #'op)))
 ;; Remove slotop and ptrop
 ;; Introduce add, sub, read, put, shiftr and shiftl
+;; The optimizer also uses it to merge introduced operators
 (define-for-syntax (merge-operators stx (current #f) (count 0) (result null))
   (define (merge cur cnt r)
     (if (< cnt 0)
@@ -130,20 +143,20 @@
      (merge-operators
       #'(n:begin step ...)
       #'step1.operator
-      1
+      (syntax->datum #'step1.cnt)
       result)]
     [(n:begin step1:operator step ...)
      #:when (operator-type=? current #'step1.operator)
      (merge-operators
       #'(n:begin step ...)
       current
-      ((if (opp? current #'step1.operator) sub1 add1) count)
+      ((if (opp? current #'step1.operator) - +) count (syntax->datum #'step1.cnt))
       result)]
     [(n:begin step1:operator step ...)
      (merge-operators
       #'(n:begin step ...)
       #'step1.operator
-      1
+      (syntax->datum #'step1.cnt)
       (merge current count result))]
 
     [(n:begin step1 step ...)
@@ -174,8 +187,8 @@
   (define-syntax-class add/sub
     #:description "add/sub"
     #:literals (add sub)
-    (pattern (add . n:integer) #:with offset #'n)
-    (pattern (sub . n:integer) #:with offset #`#,(- (syntax->datum #'n))))
+    (pattern (add . n:count) #:with offset #'n)
+    (pattern (sub . n:count) #:with offset #`#,(- (syntax->datum #'n))))
   (define-splicing-syntax-class maybe-add/sub
     #:description "maybe-add/sub"
     (pattern (~seq add/sub:add/sub))
@@ -183,8 +196,8 @@
   (define-syntax-class shift
     #:description "shiftl or shiftr"
     #:literals (shiftl shiftr)
-    (pattern (shiftl . n:integer) #:with offset #`#,(- (syntax->datum #'n)))
-    (pattern (shiftr . n:integer) #:with offset #'n))
+    (pattern (shiftl . n:count) #:with offset #`#,(- (syntax->datum #'n)))
+    (pattern (shiftr . n:count) #:with offset #'n))
   (define-syntax-class pure
     #:description "steps without IO"
     (pattern _:add/sub)
@@ -289,7 +302,7 @@
     (pattern (~seq st)
              #:with optimized #`(#,(optimize #'st)))))
 (define-for-syntax (optimize stx)
-  (syntax-parse stx
+  (syntax-parse (merge-operators stx)
     #:literals (loop n:begin)
     ((loop) #'(if (zero? (o:cur)) (void) (let loop () (loop))))
     ((n:begin) #'(n:begin))
