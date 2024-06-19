@@ -262,9 +262,10 @@
 
     ;; Fallback
     (pattern (~seq (loop st ...))
-             #:with optimized #`((loop #,@(map optimize (syntax->list #'(st ...))))))
-    (pattern (~seq (begin st ...))
-             #:with optimized #`((begin #,@(map optimize (syntax->list #'(st ...))))))
+             #:with optimized #`((loop #,(optimize #'(n:begin st ...)))))
+    ;; Actually this branch will never be reached because `merge-operators` won't insert `n:begin` in the body of `n:begin`
+    (pattern (~seq (n:begin st ...) ot ...)
+             #:with optimized #`(#,(optimize #'(n:begin st ... ot ...))))
     (pattern (~seq st)
              #:with optimized #`(#,(optimize #'st)))))
 (define-for-syntax (optimize stx)
