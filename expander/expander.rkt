@@ -248,7 +248,7 @@
              (let* ((pre-and-post (append (syntax->list #'pre)
                                           (syntax->list #'post)))
                     (r (foldl (lambda (st cnt) (+ cnt (get-offset add/sub st))) 0 pre-and-post)))
-               #`((loop/counter #,r (stt st ... end)))))
+               #`((loop/counter #,r (#,(optimize #'(n:begin stt st ... end)))))))
 
     ;; Fallback
     (pattern (~seq (loop st ...))
