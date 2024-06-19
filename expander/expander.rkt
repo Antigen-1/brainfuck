@@ -189,10 +189,6 @@
     #:literals (add sub)
     (pattern (add . n:count) #:with offset #'n)
     (pattern (sub . n:count) #:with offset #`#,(- (syntax->datum #'n))))
-  (define-splicing-syntax-class maybe-add/sub
-    #:description "maybe-add/sub"
-    (pattern (~seq add/sub:add/sub))
-    (pattern (~seq)))
   (define-syntax-class shift
     #:description "shiftl or shiftr"
     #:literals (shiftl shiftr)
@@ -211,6 +207,11 @@
     #:literals (loop)
     (pattern (~seq (loop _:add/sub)))
     (pattern (~seq (loop _:reset-loops) ...+)))
+  (define-splicing-syntax-class reset-loop/add/sub-seq
+    #:description "reset-loop/add/sub sequence"
+    (pattern (~seq _:reset-loops _:reset-loop/add/sub-seq))
+    (pattern (~seq _:add/sub _:reset-loop/add/sub-seq))
+    (pattern (~seq)))
 
   (define-syntax (cls->pred stx)
     (syntax-parse stx
@@ -274,13 +275,13 @@
   (define-splicing-syntax-class optimizer
     #:description "optimizer"
     #:literals (loop n:begin add sub shiftl shiftr read put)
-    (pattern (~seq _:maybe-add/sub
+    (pattern (~seq _:reset-loop/add/sub-seq
                    _:reset-loops
-                   post:maybe-add/sub)
+                   post:add/sub ...)
              #:with optimized
-             (if (null? (syntax->datum #'post))
+             (if (null? (syntax->datum #'(post ...)))
                  #'((reset))
-                 #'post))
+                 (merge-operators #'(n:begin post ...))))
     (pattern (~seq (loop st ...))
              #:when (let-values (((rest blocks updates) (split-loop-body/counter (syntax->list #'(st ...)))))
                       (and (zero? rest)
@@ -295,7 +296,7 @@
                    (#,((compose1 optimize merge-operators)
                        #`(n:begin #,@(apply append blocks))))))))
     (pattern (~seq (loop st ... _:reset-loops))
-             #:with optimized #'((loop/once st ...)))
+             #:with optimized #`((loop/once #,(optimize #'(n:begin st ...)))))
 
     ;; Fallback
     (pattern (~seq (loop st ...))
