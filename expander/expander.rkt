@@ -25,7 +25,9 @@
   (o:shiftr n))
 (define-syntax-parse-rule (shiftl . n:count)
   (o:shiftl n))
-(define-syntax-parse-rule (n:begin step ...) (begin step ...))
+(define-syntax-parser n:begin
+  ((_ step ...+) #'(begin step ...))
+  ((_) #'(begin (void))))
 (define-syntax-parse-rule (loop step ...)
   (if (zero? (o:cur))
       (void)
