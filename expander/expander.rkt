@@ -281,7 +281,7 @@
              #:with optimized
              (if (null? (syntax->datum #'(post ...)))
                  #'((reset))
-                 (merge-operators #'(n:begin post ...))))
+                 #`(#,(merge-operators #'(n:begin post ...)))))
     (pattern (~seq (loop st ...))
              #:when (let-values (((rest blocks updates) (split-loop-body/counter (syntax->list #'(st ...)))))
                       (and (zero? rest)
