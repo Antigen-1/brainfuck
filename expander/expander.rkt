@@ -185,6 +185,10 @@
     #:description "steps without IO"
     (pattern _:add/sub)
     (pattern _:shift))
+  (define-syntax-class loop-without-shift
+    #:description "loop-without-shift"
+    #:literals (loop)
+    (pattern (loop (~or _:add/sub _:loop-without-shift) ...)))
 
   (define-syntax (cls->pred stx)
     (syntax-parse stx
@@ -215,6 +219,10 @@
     ((cls->pred shift) stx))
   (define (add/sub? stx)
     ((cls->pred add/sub) stx))
+  (define (pure? stx)
+    ((cls->pred pure) stx))
+  (define (loop-without-shift? stx)
+    ((cls->pred loop-without-shift) stx))
 
   (define-splicing-syntax-class optimizer
     #:description "optimizer"
@@ -228,22 +236,24 @@
                  #'post))
     (pattern (~seq (loop pre:maybe-add/sub
                          stt:shift
-                         st:pure ...
+                         st ...
                          end:shift
                          post:maybe-add/sub))
              #:when (let* ((sts (syntax->list #'(stt st ... end))))
-                      (for/fold ((cnt 0)
-                                 (first? #t)
-                                 #:result (and cnt (zero? cnt) (not first?)))
-                                ((st (in-list sts)))
-                        (values
-                         (and cnt
-                              ;; The current value must be strictly used as a counter
-                              (or first? (not (zero? cnt)))
-                              (or (and (add/sub? st) cnt)
-                                  (and (shift? st)
-                                       (+ cnt (get-offset shift st)))))
-                         #f)))
+                      (and (andmap (lambda (st) (or (pure? st) (loop-without-shift? st))) sts)
+                           (for/fold ((cnt 0)
+                                      (first? #t)
+                                      #:result (and cnt (zero? cnt) (not first?)))
+                                     ((st (in-list sts)))
+                             (values
+                              (and cnt
+                                   ;; The current value must be strictly used as a counter
+                                   (or first? (not (zero? cnt)))
+                                   (or (and (shift? st)
+                                            (+ cnt (get-offset shift st)))
+                                       ;; Forms except shifts
+                                       cnt))
+                              #f))))
              #:with optimized
              (let* ((pre-and-post (append (syntax->list #'pre)
                                           (syntax->list #'post)))
