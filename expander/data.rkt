@@ -38,9 +38,14 @@
             (shiftl (sub1 n) (cons c f) 0 null)
             (shiftl (sub1 n) (cons c f) (car l) (cdr l)))))
   (define (read n)
+    (define (->byte v)
+      (if (eof-object? v)
+          0
+          v))
     (cur
-     (for/last ((_ (in-range n)))
-       (read-byte))))
+     (->byte
+      (for/last ((_ (in-range n)))
+        (read-byte)))))
   (define (put n)
     (define bt (cur))
     (for ((_ (in-range n)))
