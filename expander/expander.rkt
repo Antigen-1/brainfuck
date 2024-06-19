@@ -248,7 +248,7 @@
   ;; Used in the counter optimizer
   (define (split-loop-body/counter sts (offset 0) (current null) (blocks null) (updates null))
     (if (null? sts)
-        (values offset (reverse (cons current blocks)) (reverse updates))
+        (values offset (reverse (cons (reverse current) blocks)) (reverse updates))
         (syntax-parse (car sts)
           (st:shift
            (define no (+ offset (get-offset shift #'st)))
@@ -258,7 +258,7 @@
             (if merge? 0 no)
             (if merge? null (cons #'st current))
             (if merge?
-                (cons (cons #'st current) blocks)
+                (cons (reverse (cons #'st current)) blocks)
                 blocks)
             updates))
           (st
@@ -289,7 +289,10 @@
              #:with optimized
              (let*-values (((_ blocks updates) (split-loop-body/counter (syntax->list #'(st ...))))
                            ((r) (foldl (lambda (st cnt) (+ cnt (get-offset add/sub st))) 0 updates)))
-               #`((loop/counter #,r (#,(optimize #`(n:begin #,@(apply append blocks))))))))
+               #`((loop/counter
+                   #,r
+                   (#,((compose1 optimize merge-operators)
+                       #`(n:begin #,@(apply append blocks))))))))
     (pattern (~seq (loop st ... _:reset-loop))
              #:with optimized #'((loop/once st ...)))
 
@@ -298,11 +301,11 @@
              #:with optimized #`((loop #,(optimize #'(n:begin st ...)))))
     ;; Actually this branch will never be reached because `merge-operators` won't insert `n:begin` in the body of `n:begin`
     (pattern (~seq (n:begin st ...) ot ...)
-             #:with optimized #`(#,(optimize #'(n:begin st ... ot ...))))
+             #:with optimized #`(#,((compose1 optimize merge-operators) #'(n:begin st ... ot ...))))
     (pattern (~seq st)
              #:with optimized #`(#,(optimize #'st)))))
 (define-for-syntax (optimize stx)
-  (syntax-parse (merge-operators stx)
+  (syntax-parse stx
     #:literals (loop n:begin)
     ((loop) #'(if (zero? (o:cur)) (void) (let loop () (loop))))
     ((n:begin) #'(n:begin))
