@@ -52,6 +52,10 @@
                (if (zero? nv)
                    (reset)
                    (lp nv))))))))
+(define-syntax-parse-rule (loop/once body ...)
+  (if (zero? (o:cur))
+      (void)
+      (n:begin body ... (reset))))
 
 ;; Hooks
 (define-syntax (program stx) (raise-syntax-error #f "Used outside the expander" stx))
@@ -186,9 +190,13 @@
     (pattern _:add/sub)
     (pattern _:shift))
   (define-syntax-class loop-without-shift
-    #:description "loop-without-shift"
+    #:description "loops without shifts (like [-[+]])"
     #:literals (loop)
     (pattern (loop (~or _:add/sub _:loop-without-shift) ...)))
+  (define-syntax-class reset-loop
+    #:description "loops that simply reset the current value (like [[-]])"
+    #:literals (loop)
+    (pattern (loop (~or _:add/sub _:reset-loop))))
 
   (define-syntax (cls->pred stx)
     (syntax-parse stx
@@ -224,41 +232,53 @@
   (define (loop-without-shift? stx)
     ((cls->pred loop-without-shift) stx))
 
+  ;; Used in the counter optimizer
+  (define (split-loop-body/counter sts (offset 0) (current null) (blocks null) (updates null))
+    (if (null? sts)
+        (values offset (reverse (cons current blocks)) (reverse updates))
+        (syntax-parse (car sts)
+          (st:shift
+           (define no (+ offset (get-offset shift #'st)))
+           (define merge? (and (zero? no) (not (null? current))))
+           (split-loop-body/counter
+            (cdr sts)
+            (if merge? 0 no)
+            (if merge? null (cons #'st current))
+            (if merge?
+                (cons (cons #'st current) blocks)
+                blocks)
+            updates))
+          (st
+           (define merge? (not (zero? offset)))
+           (split-loop-body/counter
+            (cdr sts)
+            offset
+            (if merge? (cons #'st current) current)
+            blocks
+            (if (not merge?) (cons #'st updates) updates))))))
+
   (define-splicing-syntax-class optimizer
     #:description "optimizer"
     #:literals (loop n:begin add sub shiftl shiftr read put)
     (pattern (~seq _:maybe-add/sub
-                   (loop _:add/sub)
+                   _:reset-loop
                    post:maybe-add/sub)
              #:with optimized
              (if (null? (syntax->datum #'post))
                  #'((reset))
                  #'post))
-    (pattern (~seq (loop pre:maybe-add/sub
-                         stt:shift
-                         st ...
-                         end:shift
-                         post:maybe-add/sub))
-             #:when (let* ((sts (syntax->list #'(stt st ... end))))
-                      (and (andmap (lambda (st) (or (pure? st) (loop-without-shift? st))) sts)
-                           (for/fold ((cnt 0)
-                                      (first? #t)
-                                      #:result (and cnt (zero? cnt) (not first?)))
-                                     ((st (in-list sts)))
-                             (values
-                              (and cnt
-                                   ;; The current value must be strictly used as a counter
-                                   (or first? (not (zero? cnt)))
-                                   (or (and (shift? st)
-                                            (+ cnt (get-offset shift st)))
-                                       ;; Forms except shifts
-                                       cnt))
-                              #f))))
+    (pattern (~seq (loop st ...))
+             #:when (let-values (((rest blocks updates) (split-loop-body/counter (syntax->list #'(st ...)))))
+                      (and (zero? rest)
+                           (andmap (lambda (st) (or (pure? st) (loop-without-shift? st)))
+                                   (apply append blocks))
+                           (andmap add/sub? updates)))
              #:with optimized
-             (let* ((pre-and-post (append (syntax->list #'pre)
-                                          (syntax->list #'post)))
-                    (r (foldl (lambda (st cnt) (+ cnt (get-offset add/sub st))) 0 pre-and-post)))
-               #`((loop/counter #,r (#,(optimize #'(n:begin stt st ... end)))))))
+             (let*-values (((_ blocks updates) (split-loop-body/counter (syntax->list #'(st ...))))
+                           ((r) (foldl (lambda (st cnt) (+ cnt (get-offset add/sub st))) 0 updates)))
+               #`((loop/counter #,r (#,(optimize #`(n:begin #,@(apply append blocks))))))))
+    (pattern (~seq (loop st ... _:reset-loop))
+             #:with optimized #'((loop/once st ...)))
 
     ;; Fallback
     (pattern (~seq (loop st ...))
