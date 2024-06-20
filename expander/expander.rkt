@@ -297,8 +297,8 @@
       (cons (min (car p) v)
             (max (cdr p) v)))
     (define (in-range? rng v)
-      (and (> (* (car rng) (+ (car rng) (cdr v))) 0)
-           (> (* (cdr rng) (+ (cdr rng) (car v))) 0)))
+      (and (> (* (car rng) (+ (car rng) v)) 0)
+           (> (* (cdr rng) (+ (cdr rng) v)) 0)))
 
     ;; (or/c #f <range>)
     (and (pair? lst)
@@ -317,7 +317,7 @@
                                         (split-sequence/closure (syntax->list #'(s ...))))
                                       (and (zero? rest)
                                            r
-                                           (in-range? (car old) r)
+                                           (in-range? r (cdr old))
                                            old))
                                      (op:shift
                                       (define n-offset (+ (cdr old) (get-offset shift #'op)))
