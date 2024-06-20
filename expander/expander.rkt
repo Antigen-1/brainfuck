@@ -304,15 +304,15 @@
                                            #:literals (loop)
                                            ((loop s ...)
                                             (or (and loop? (loop-without-shift? #'(loop s ...)))
-                                                (begin-reorder? #'(s ...))))
+                                                (and (not loop?) (begin-reorder? #'(s ...)))))
                                            (_ #f))))
                         (apply append blocks))
                 (andmap (lambda (st) (or (add/sub? st) (reset-loop? st)))
                         updates)))))
   (define (loop-counter? stx-list)
     (and (begin-reorder? stx-list #:loop? #t)
-         (let-values (((rest _ suffix) (split-sequence/closure (syntax->list stx-list))))
-           (and (null? suffix) (zero? rest)))))
+         (let-values (((rest blocks updates) (split-sequence/closure (syntax->list stx-list))))
+           (zero? rest))))
 
   (define-splicing-syntax-class optimizer
     #:description "optimizer"
