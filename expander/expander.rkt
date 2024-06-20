@@ -227,7 +227,12 @@
          #'(lambda (stx)
              (syntax-parse stx
                (id #t)
-               (_ #f)))))))
+               (_ #f)))))
+      ((_ #:splicing cls)
+       #'(lambda (stx)
+           (syntax-parse stx
+             ((id) #t)
+             (_ #f))))))
   (define-syntax (get-offset stx)
     (syntax-parse stx
       ((_ cls s)
@@ -248,6 +253,8 @@
     ((cls->pred pure) stx))
   (define (loop-without-shift? stx)
     ((cls->pred loop-without-shift) stx))
+  (define (reset-loop? stx)
+    ((cls->pred #:splicing reset-loops) #`(#,stx)))
 
   ;; Used in the counter optimizer
   (define (split-loop-body/counter sts (offset 0) (current null) (blocks null) (updates null))
@@ -291,10 +298,15 @@
                       (and (zero? rest)
                            (andmap (lambda (st) (or (pure? st) (loop-without-shift? st)))
                                    (apply append blocks))
-                           (andmap add/sub? updates)))
+                           (andmap (lambda (st) (or (add/sub? st) (reset-loop? st)))
+                                   updates)))
              #:with optimized
              (let*-values (((_ blocks updates) (split-loop-body/counter (syntax->list #'(st ...))))
-                           ((r) (foldl (lambda (st cnt) (+ cnt (get-offset add/sub st))) 0 updates)))
+                           ((r) (foldl (lambda (st cnt)
+                                         (if (reset-loop? st)
+                                             0
+                                             (+ cnt (get-offset add/sub st))))
+                                       0 updates)))
                #`((loop/counter
                    #,r
                    (#,((compose1 optimize merge-operators)
