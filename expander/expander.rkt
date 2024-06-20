@@ -305,25 +305,26 @@
          (let-values (((rest blocks updates) (split-sequence/closure lst)))
            (and (andmap (lambda (st) (or (add/sub? st) (reset-loop? st)))
                         updates)
-                (foldl (lambda (st old)
-                         (and old
-                              (or (and (add/sub? st) old)
-                                  (syntax-parse st
-                                    #:literals (loop)
-                                    ((loop s ...)
-                                     (define r (begin-reorder? #'(s ...)))
-                                     (define-values (rest blocks updates)
-                                       (split-sequence/closure (syntax->list #'(s ...))))
-                                     (and (zero? rest)
-                                          r
-                                          (in-range? old r)
-                                          old))
-                                    (op:shift
-                                     (define n-offset (+ (cdr old) (get-offset shift #'op)))
-                                     (cons (make-range (car old) n-offset) n-offset))
-                                    (_ #f)))))
-                       (cons (cons 0 0) 0)
-                       (apply append blocks))))))
+                (car
+                 (foldl (lambda (st old)
+                          (and old
+                               (or (and (add/sub? st) old)
+                                   (syntax-parse st
+                                     #:literals (loop)
+                                     ((loop s ...)
+                                      (define r (begin-reorder? #'(s ...)))
+                                      (define-values (rest blocks updates)
+                                        (split-sequence/closure (syntax->list #'(s ...))))
+                                      (and (zero? rest)
+                                           r
+                                           (in-range? old r)
+                                           old))
+                                     (op:shift
+                                      (define n-offset (+ (cdr old) (get-offset shift #'op)))
+                                      (cons (make-range (car old) n-offset) n-offset))
+                                     (_ #f)))))
+                        (cons (cons 0 0) 0)
+                        (apply append blocks)))))))
   (define (loop-counter? stx-list)
     (and (begin-reorder? stx-list)
          (let-values (((rest blocks updates) (split-sequence/closure (syntax->list stx-list))))
