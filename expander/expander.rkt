@@ -39,7 +39,7 @@
    #`(#%module-begin
       (let ()
         #,((compose1 optimize merge-operators flatten-program) #'program)))))
-;; Optimized Interposition points
+;; Optimized interposition points
 (define-syntax-parse-rule (reset)
   (o:cur 0))
 (define-syntax-parser loop/counter
@@ -252,7 +252,9 @@
   ;; Used in the counter optimizer
   (define (split-loop-body/counter sts (offset 0) (current null) (blocks null) (updates null))
     (if (null? sts)
-        (values offset (reverse (cons (reverse current) blocks)) (reverse updates))
+        (values offset
+                (reverse (if (null? current) blocks (cons (reverse current) blocks)))
+                (reverse updates))
         (syntax-parse (car sts)
           (st:shift
            (define no (+ offset (get-offset shift #'st)))
