@@ -1,7 +1,7 @@
 #lang racket/base
 (require syntax/parse/define
          (prefix-in o: "data.rkt")
-         (for-syntax racket/base syntax/parse/define)
+         (for-syntax racket/base syntax/parse/define racket/list)
          (for-meta 2 racket/base))
 (provide program loopstart loopend slotop ptrop unit
          (rename-out (n:#%module-begin #%module-begin)))
@@ -215,33 +215,32 @@
     (pattern (~seq _:add/sub _:reset-loop/add/sub-seq))
     (pattern (~seq)))
 
+  (define-for-syntax (make-id stx cls (base "_"))
+    (datum->syntax
+     stx
+     (string->symbol
+      (string-append
+       base ":"
+       (symbol->string (syntax->datum cls))))))
+
   (define-syntax (cls->pred stx)
     (syntax-parse stx
       ((_ cls)
-       (with-syntax ((id (datum->syntax
-                          #'stx
-                          (string->symbol
-                           (string-append
-                            "_:"
-                            (symbol->string (syntax->datum #'cls)))))))
+       (with-syntax ((id (make-id #'stx #'cls)))
          #'(lambda (stx)
              (syntax-parse stx
                (id #t)
                (_ #f)))))
       ((_ #:splicing cls)
-       #'(lambda (stx)
-           (syntax-parse stx
-             ((id) #t)
-             (_ #f))))))
+       (with-syntax ((id (make-id #'stx #'cls)))
+         #'(lambda (stx)
+             (syntax-parse stx
+               ((id) #t)
+               (_ #f)))))))
   (define-syntax (get-offset stx)
     (syntax-parse stx
       ((_ cls s)
-       (with-syntax ((id (datum->syntax
-                          #'stx
-                          (string->symbol
-                           (string-append
-                            "op:"
-                            (symbol->string (syntax->datum #'cls)))))))
+       (with-syntax ((id (make-id #'stx #'cls "op")))
          #'(syntax-parse s
              (id (syntax->datum #'op.offset)))))))
 
@@ -256,8 +255,10 @@
   (define (reset-loop? stx)
     ((cls->pred #:splicing reset-loops) #`(#,stx)))
 
-  ;; Used in the counter optimizer
-  (define (split-loop-body/counter sts (offset 0) (current null) (blocks null) (updates null))
+  ;; (->* ((listof syntax?))
+  ;;      (exact-nonnegative-integer? (listof syntax?) (listof (listof syntax?)) (listof syntax?))
+  ;;      (values exact-nonnegative-integer? (listof (listof syntax?)) (listof syntax?)))
+  (define (split-sequence/closure sts (offset 0) (current null) (blocks null) (updates null))
     (if (null? sts)
         (values offset
                 (reverse (if (null? current) blocks (cons (reverse current) blocks)))
@@ -266,9 +267,9 @@
           (st:shift
            (define no (+ offset (get-offset shift #'st)))
            (define merge? (and (zero? no) (not (null? current))))
-           (split-loop-body/counter
+           (split-sequence/closure
             (cdr sts)
-            (if merge? 0 no)
+            no
             (if merge? null (cons #'st current))
             (if merge?
                 (cons (reverse (cons #'st current)) blocks)
@@ -276,16 +277,41 @@
             updates))
           (st
            (define merge? (not (zero? offset)))
-           (split-loop-body/counter
+           (split-sequence/closure
             (cdr sts)
             offset
             (if merge? (cons #'st current) current)
             blocks
             (if (not merge?) (cons #'st updates) updates))))))
+  ;; (-> syntax? (values exact-nonnegative-integer? (listof (listof syntax?)) (listof (listof syntax?))))
+  (define (get/rest-closure-suffix stx-list)
+    (let*-values (((rest blocks updates) (split-sequence/closure (syntax->list stx-list)))
+                  ((r) (foldl (lambda (st cnt)
+                                (if (reset-loop? st)
+                                    0
+                                    (+ cnt (get-offset add/sub st))))
+                              0 updates))
+                  ((closure suffix)
+                   (split-at-right blocks (if (zero? rest) 0 1))))
+      (values r closure suffix)))
+
+  (define (begin-reorder? stx-list)
+    (define lst (syntax->list stx-list))
+    (and (pair? lst)
+         (let-values (((rest blocks updates) (split-sequence/closure lst)))
+           (and (andmap (lambda (st) (or (pure? st) (loop-without-shift? st)))
+                        (apply append blocks))
+                (andmap (lambda (st) (or (add/sub? st) (reset-loop? st)))
+                        updates)))))
+  (define (loop-counter? stx-list)
+    (and (begin-reorder? stx-list)
+         (let-values (((rest _ suffix) (split-sequence/closure (syntax->list stx-list))))
+           (and (null? suffix) (zero? rest)))))
 
   (define-splicing-syntax-class optimizer
     #:description "optimizer"
     #:literals (loop n:begin add sub shiftl shiftr read put)
+    ;; Note: The order of optimizers matters
     (pattern (~seq _:reset-loop/add/sub-seq
                    _:reset-loops
                    post:add/sub ...)
@@ -293,26 +319,24 @@
              (if (null? (syntax->datum #'(post ...)))
                  #'((reset))
                  #`(#,(merge-operators #'(n:begin post ...)))))
-    (pattern (~seq (loop st ...))
-             #:when (let-values (((rest blocks updates) (split-loop-body/counter (syntax->list #'(st ...)))))
-                      (and (zero? rest)
-                           (andmap (lambda (st) (or (pure? st) (loop-without-shift? st)))
-                                   (apply append blocks))
-                           (andmap (lambda (st) (or (add/sub? st) (reset-loop? st)))
-                                   updates)))
-             #:with optimized
-             (let*-values (((_ blocks updates) (split-loop-body/counter (syntax->list #'(st ...))))
-                           ((r) (foldl (lambda (st cnt)
-                                         (if (reset-loop? st)
-                                             0
-                                             (+ cnt (get-offset add/sub st))))
-                                       0 updates)))
-               #`((loop/counter
-                   #,r
-                   (#,((compose1 optimize merge-operators)
-                       #`(n:begin #,@(apply append blocks))))))))
     (pattern (~seq (loop st ... _:reset-loops))
              #:with optimized #`((loop/once #,(optimize #'(n:begin st ...)))))
+    (pattern (~seq (n:begin st ...))
+             #:when (begin-reorder? #'(st ...))
+             #:with optimized
+             (let-values (((r closure suffix) (get/rest-closure-suffix #'(st ...))))
+               #`((n:begin
+                   (o:cur (+ (o:cur) #,r))
+                   #,((compose1 optimize merge-operators)
+                      #`(n:begin #,@(apply append closure)))
+                   #,(optimize #`(n:begin #,@(apply append suffix)))))))
+    (pattern (~seq (loop st ...))
+             #:when (loop-counter? #'(st ...))
+             #:with optimized
+             (let-values (((r closure _) (get/rest-closure-suffix #'(st ...))))
+               #`((loop/counter
+                   #,r
+                   (#,((compose1 optimize merge-operators) #`(n:begin #,@(apply append closure))))))))
 
     ;; Fallback
     (pattern (~seq (loop st ...))
