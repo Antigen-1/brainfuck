@@ -296,6 +296,9 @@
     (define (make-range p v)
       (cons (min (car p) v)
             (max (cdr p) v)))
+    (define (merge-range p1 p2)
+      (cons (min (car p1) (car p2))
+            (max (cdr p1) (cdr p2))))
     (define (in-range? rng v)
       (and (> (* (car rng) (+ (car rng) v)) 0)
            (> (* (cdr rng) (+ (cdr rng) v)) 0)))
@@ -318,7 +321,10 @@
                                       (and (zero? rest)
                                            r
                                            (in-range? r (cdr old))
-                                           old))
+                                           (cons (merge-range
+                                                  (car old)
+                                                  (cons (+ (cdr old) (car r)) (+ (cdr old) (cdr r))))
+                                                 (cdr old))))
                                      (op:shift
                                       (define n-offset (+ (cdr old) (get-offset shift #'op)))
                                       (cons (make-range (car old) n-offset) n-offset))
