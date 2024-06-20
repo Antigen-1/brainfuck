@@ -317,7 +317,7 @@
                                         (split-sequence/closure (syntax->list #'(s ...))))
                                       (and (zero? rest)
                                            r
-                                           (in-range? old r)
+                                           (in-range? (car old) r)
                                            old))
                                      (op:shift
                                       (define n-offset (+ (cdr old) (get-offset shift #'op)))
