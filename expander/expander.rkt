@@ -305,7 +305,7 @@
          (let-values (((rest blocks updates) (split-sequence/closure lst)))
            (and (andmap (lambda (st) (or (add/sub? st) (reset-loop? st)))
                         updates)
-                (car
+                ((lambda (v) (and v (car v)))
                  (foldl (lambda (st old)
                           (and old
                                (or (and (add/sub? st) old)
