@@ -8,8 +8,8 @@
 (define main-vector (vector null 0 null))
 (define-syntax-rule (make-observer ind)
   (case-lambda
-    (() (unsafe-vector-ref main-vector ind))
-    ((v) (unsafe-vector-set! main-vector ind v))))
+    (() (unsafe-vector*-ref main-vector ind))
+    ((v) (unsafe-vector*-set! main-vector ind v))))
 
 (begin-encourage-inline
   (define cur (make-observer 1))
