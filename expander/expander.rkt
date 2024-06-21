@@ -35,7 +35,7 @@
   (if (zero? (o:cur))
       (void)
       (let lp ()
-        step ...
+        (n:begin step ...)
         (if (zero? (o:cur)) (void) (lp)))))
 (define-syntax-parser n:#%module-begin
   ((_ program)
@@ -50,7 +50,7 @@
    #'(if (zero? (o:cur))
          (void)
          (let lp ()
-           body ...
+           (n:begin body ...)
            (lp))))
   ;; This offset can be negative
   ((_ offset (body ...))
@@ -59,7 +59,7 @@
            (void)
            (let lp ((v v))
              (let ((nv (o:n:+ v offset)))
-               body ...
+               (n:begin body ...)
                (if (zero? nv)
                    (reset)
                    (lp nv))))))))
