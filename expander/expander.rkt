@@ -55,7 +55,7 @@
        (if (zero? v)
            (void)
            (let lp ((v v))
-             (let ((nv (+ v offset)))
+             (let ((nv (o:n:+ v offset)))
                body ...
                (if (zero? nv)
                    (reset)
@@ -354,7 +354,7 @@
              #:with optimized
              (let-values (((r closure suffix) (get/rest-closure-suffix #'(st ...))))
                #`((n:begin
-                   (o:cur (+ (o:cur) #,r))
+                   #,@(if (zero? r) #'() #`((o:cur (o:n:+ (o:cur) #,r))))
                    #,((compose1 optimize merge-operators)
                       #`(n:begin #,@(apply append closure)))
                    #,(optimize #`(n:begin #,@(apply append suffix)))))))

@@ -1,6 +1,6 @@
 #lang racket/base
 (require (submod racket/performance-hint begin-encourage-inline))
-(provide add sub shiftr shiftl read put cur)
+(provide add sub shiftr shiftl read put cur n:+)
 
 ;; former current latter
 ;; (vector/c list? byte? list?)
@@ -16,11 +16,14 @@
   (define former (make-mutator-and-accessor main-vector 0))
   (define latter (make-mutator-and-accessor main-vector 2))
 
+  (define (n:+ v1 v2)
+   (bitwise-and (+ v1 v2) 255))
+
   ;; n: exact-positive-integer?
   (define (add n)
-    (cur (bitwise-and (+ n (cur)) 255)))
+    (cur (n:+ (cur) n)))
   (define (sub n)
-    (cur (bitwise-and (- (cur) n) 255)))
+    (cur (n:+ (cur) (- n))))
   (define (shiftr n (f (former)) (c (cur)) (l (latter)))
     (if (zero? n)
         (begin (former f)
