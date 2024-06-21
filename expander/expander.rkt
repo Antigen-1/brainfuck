@@ -26,6 +26,8 @@
 (define-syntax-parse-rule (shiftl . n:count)
   (o:shiftl n))
 (define-syntax-parser n:begin
+  #:literals (n:begin)
+  ((_ (n:begin st ...) pst ...) #'(n:begin st ... pst ...))
   ((_ step ...+) #'(begin step ...))
   ((_) #'(begin (void))))
 (define-syntax-parse-rule (loop step ...)
@@ -196,10 +198,6 @@
     #:literals (shiftl shiftr)
     (pattern (shiftl . n:count) #:with offset #`#,(- (syntax->datum #'n)))
     (pattern (shiftr . n:count) #:with offset #'n))
-  (define-syntax-class loop-without-shift
-    #:description "loops without shifts (like [-[+]])"
-    #:literals (loop)
-    (pattern (loop (~or _:add/sub _:loop-without-shift) ...)))
   (define-splicing-syntax-class reset-loops
     #:description "loops that simply reset the current value (like [[-]][-])"
     #:literals (loop)
@@ -244,8 +242,6 @@
     ((cls->pred shift) stx))
   (define (add/sub? stx)
     ((cls->pred add/sub) stx))
-  (define (loop-without-shift? stx)
-    ((cls->pred loop-without-shift) stx))
   (define (reset-loop? stx)
     ((cls->pred #:splicing reset-loops) #`(#,stx)))
 
