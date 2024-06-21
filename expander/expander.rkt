@@ -28,8 +28,7 @@
 (define-syntax-parser n:begin
   #:literals (n:begin)
   ((_ (n:begin ist ...) pst ...) #'(n:begin ist ... pst ...))
-  ((_ step (n:begin)) #'step)
-  ((_ step) #'step)
+  ((_ step (n:begin) ...) #'step)
 
   ((_ st0 st1 st ...) #'(begin st0 (n:begin st1 st ...)))
   ((_) #'(begin (void))))
