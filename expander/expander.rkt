@@ -27,8 +27,9 @@
   (o:shiftl n))
 (define-syntax-parser n:begin
   #:literals (n:begin)
-  ((_ (n:begin st ...) pst ...) #'(n:begin st ... pst ...))
-  ((_ step ...+) #'(begin step ...))
+  ((_ (n:begin ist ...) pst ...) #'(n:begin ist ... pst ...))
+  ((_ st0 st1 st ...) #'(begin st0 (n:begin st1 st ...)))
+  ((_ step) #'step)
   ((_) #'(begin (void))))
 (define-syntax-parse-rule (loop step ...)
   (if (zero? (o:cur))
