@@ -63,11 +63,10 @@
       (if (eof-object? v)
           0
           v))
-    (cur
-     (->byte
-      (for/last ((_ (in-range n)))
-        (read-byte)))))
-  (define (put n)
-    (define bt (cur))
-    (for ((_ (in-range n)))
-      (write-byte bt))))
+    (if (= n 1)
+        (cur (->byte (read-byte)))
+        (begin (read-byte) (read (sub1 n)))))
+  (define (put n (bt (cur)))
+    (if (= 1 n)
+        (write-byte bt)
+        (begin (write-byte bt) (put (sub1 n) bt)))))
