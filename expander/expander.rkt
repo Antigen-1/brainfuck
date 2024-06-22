@@ -298,8 +298,7 @@
       (cons (min (car p1) (car p2))
             (max (cdr p1) (cdr p2))))
     (define (in-range? rng v)
-      (and (> (* (car rng) (+ (car rng) v)) 0)
-           (> (* (cdr rng) (+ (cdr rng) v)) 0)))
+      (> (* (+ (car rng) v) (+ (cdr rng) v)) 0))
 
     ;; (or/c #f <range>)
     (and (pair? lst)
