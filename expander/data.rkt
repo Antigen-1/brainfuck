@@ -1,7 +1,9 @@
 #lang racket/base
 (require (submod racket/performance-hint begin-encourage-inline)
-         racket/unsafe/ops)
-(provide add sub shiftr shiftl read put cur n:+)
+         racket/unsafe/ops
+         syntax/parse/define
+         (for-syntax racket/base racket/fixnum))
+(provide add sub shiftr shiftl read put cur (for-syntax dispatch-+ dispatch--))
 
 ;; former current latter
 ;; (vector/c list? byte? list?)
@@ -17,13 +19,29 @@
   (define latter (make-observer 2))
 
   (define (n:+ v1 v2)
-   (bitwise-and (+ v1 v2) 255))
+    (bitwise-and (+ v1 v2) 255))
+  (define (f:+ v1 v2)
+    (unsafe-fxand (unsafe-fx+/wraparound v1 v2) 255))
+  (define (n:- v1 v2)
+    (bitwise-and (- v1 v2) 255))
+  (define (f:- v1 v2)
+    (unsafe-fxand (unsafe-fx-/wraparound v1 v2) 255))
+  (define-for-syntax (dispatch-+ . ns)
+    (if (andmap (compose1 fixnum-for-every-system? syntax->datum) ns)
+        #'f:+
+        #'n:+))
+  (define-for-syntax (dispatch-- . ns)
+    (if (andmap (compose1 fixnum-for-every-system? syntax->datum) ns)
+        #'f:-
+        #'n:-))
 
   ;; n: exact-positive-integer?
-  (define (add n)
-    (cur (n:+ (cur) n)))
-  (define (sub n)
-    (cur (n:+ (cur) (- n))))
+  (define-syntax-parser add
+    ((_ n)
+     #`(cur (#,(dispatch-+ #'n) (cur) n))))
+  (define-syntax-parser sub
+    ((_ n)
+     #`(cur (#,(dispatch-- #'n) (cur) n))))
   (define (shiftr n (f (former)) (c (cur)) (l (latter)))
     (if (zero? n)
         (begin (former f)

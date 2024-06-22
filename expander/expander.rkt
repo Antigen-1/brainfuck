@@ -55,11 +55,11 @@
            (lp))))
   ;; This offset can be negative
   ((_ offset (body ...))
-   #'(let ((v (o:cur)))
+   #`(let ((v (o:cur)))
        (if (zero? v)
            (void)
            (let lp ((v v))
-             (let ((nv (o:n:+ v offset)))
+             (let ((nv (#,(o:dispatch-+ #'offset) v offset)))
                (n:begin body ...)
                (if (zero? nv)
                    (reset)
