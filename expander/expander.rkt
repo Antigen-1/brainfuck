@@ -355,7 +355,7 @@
                    ;; st ...
                    #,((compose1 optimize merge-operators)
                       #`(n:begin #,@(apply append closure)))
-                   #,@(if (zero? r) #'() #`(#,(optimize #`(n:begin #,@(apply append suffix)))))
+                   #,@(if (null? suffix) #'() #`(#,(optimize #`(n:begin #,@(apply append suffix)))))
 
                    (n:begin post ...)))))
     ;; Counter
