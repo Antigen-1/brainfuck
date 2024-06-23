@@ -333,6 +333,7 @@
     #:description "optimizer"
     #:literals (loop n:begin add sub shiftl shiftr read put)
     ;; Note: The order of optimizers matters
+    ;; Resetting
     (pattern (~seq _:reset-loop/add/sub-seq
                    _:reset-loops
                    post:add/sub ...)
@@ -342,15 +343,22 @@
                  #`(#,(merge-operators #'(n:begin post ...)))))
     (pattern (~seq (loop st ... _:reset-loops))
              #:with optimized #`((loop/once #,(optimize #'(n:begin st ...)))))
-    (pattern (~seq (n:begin st ...))
+    ;; Reordering
+    (pattern (~seq (n:begin pre ... st ...+ post ...))
              #:when (begin-reorder? #'(st ...))
              #:with optimized
              (let-values (((r closure suffix) (get/rest-closure-suffix #'(st ...))))
                #`((n:begin
                    #,@(if (zero? r) #'() #`((o:cur (#,(o:dispatch-+ #`#,r) (o:cur) #,r))))
+                   (n:begin pre ...)
+
+                   ;; st ...
                    #,((compose1 optimize merge-operators)
                       #`(n:begin #,@(apply append closure)))
-                   #,(optimize #`(n:begin #,@(apply append suffix)))))))
+                   #,@(if (zero? r) #'() #`(#,(optimize #`(n:begin #,@(apply append suffix)))))
+
+                   (n:begin post ...)))))
+    ;; Counter
     (pattern (~seq (loop st ...))
              #:when (loop-counter? #'(st ...))
              #:with optimized
