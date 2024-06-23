@@ -32,12 +32,18 @@
 
   ((_ st0 st1 st ...) #'(begin st0 (n:begin st1 st ...)))
   ((_) #'(begin (void))))
-(define-syntax-parse-rule (loop step ...)
-  (if (zero? (o:cur))
-      (void)
-      (let lp ()
-        (n:begin step ...)
-        (if (zero? (o:cur)) (void) (lp)))))
+(define-syntax-parser loop
+  ((_ step ...)
+   (let ((ex (local-expand #'(n:begin step ...) 'expression (list #'n:begin))))
+     (if (null? (cdr (syntax-e ex)))
+         #`(if (zero? (o:cur))
+               (void)
+               (let lp () (lp)))
+         #`(if (zero? (o:cur))
+               (void)
+               (let lp ()
+                 #,ex
+                 (if (zero? (o:cur)) (void) (lp))))))))
 (define-syntax-parser n:#%module-begin
   ((_ program)
    #`(#%module-begin
@@ -286,6 +292,26 @@
                   ((closure suffix)
                    (split-at-right blocks (if (zero? rest) 0 1))))
       (values r closure suffix)))
+  ;; (-> syntax? (listof (cons/c (or/c 'reorder 'no-reorder) (non-empty-listof syntax?))))
+  (define (split-sequence/reordering stx-list)
+    (define (make-block type seq)
+      (cons type seq))
+    (call-with-values
+     (lambda ()
+       (for/fold ((results null)
+                  (current null))
+                 ((st (in-list (syntax->list stx-list))))
+         (if (begin-reorder? #`(#,@(reverse (cons st current))))
+             (values results (cons st current))
+             (if (null? current)
+                 (values (cons (make-block 'no-reorder (list st)) results) null)
+                 (values (cons (make-block 'no-reorder (list st))
+                               (cons (make-block 'reorder (reverse current)) results))
+                         null)))))
+     (lambda (rs ct)
+       (if (null? ct)
+           (reverse rs)
+           (reverse (cons (make-block 'reorder (reverse ct)) rs))))))
 
   (define (begin-reorder? stx-list)
     (define lst (syntax->list stx-list))
@@ -344,20 +370,19 @@
     (pattern (~seq (loop st ... _:reset-loops))
              #:with optimized #`((loop/once #,(optimize #'(n:begin st ...)))))
     ;; Reordering
-    (pattern (~seq (n:begin pre ... st ...+ post ...))
-             #:when (begin-reorder? #'(st ...))
+    (pattern (~seq (n:begin st ...))
              #:with optimized
-             (let-values (((r closure suffix) (get/rest-closure-suffix #'(st ...))))
-               #`((n:begin
-                   #,@(if (zero? r) #'() #`((o:cur (#,(o:dispatch-+ #`#,r) (o:cur) #,r))))
-                   pre ...
-
-                   ;; st ...
-                   #,((compose1 optimize merge-operators)
-                      #`(n:begin #,@(apply append closure)))
-                   #,@(if (null? suffix) #'() #`(#,(optimize #`(n:begin #,@(apply append suffix)))))
-
-                   post ...))))
+             (let ((blocks (split-sequence/reordering #'(st ...))))
+               ((lambda (ll) #`(n:begin #,@(apply append (map syntax->list ll))))
+                (for/list ((b (in-list blocks)))
+                  (if (eq? (car b) 'reorder)
+                      (let-values (((r closure suffix) (get/rest-closure-suffix #`(#,@(cdr b)))))
+                        #`((n:begin
+                            #,@(if (zero? r) #'() #`((o:cur (#,(o:dispatch-+ #`#,r) (o:cur) #,r))))
+                            #,((compose1 optimize merge-operators)
+                               #`(n:begin #,@(apply append closure)))
+                            #,(optimize #`(n:begin #,@(apply append suffix))))))
+                      #`(#,(optimize #`(n:begin #,@(cdr b)))))))))
     ;; Counter
     (pattern (~seq (loop st ...))
              #:when (loop-counter? #'(st ...))
@@ -378,7 +403,7 @@
 (define-for-syntax (optimize stx)
   (syntax-parse stx
     #:literals (loop n:begin)
-    ((loop) #'(if (zero? (o:cur)) (void) (let loop () (loop))))
+    ((loop) #'(loop))
     ((n:begin) #'(n:begin))
     ((n:begin step0:optimizer step ...)
      #`(n:begin #,@#'step0.optimized #,(optimize #'(n:begin step ...))))
