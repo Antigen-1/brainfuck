@@ -48,7 +48,13 @@
   ((_ program)
    #`(#%module-begin
       (let ()
-        #,((compose1 optimize merge-operators flatten-program) #'program)))))
+        #,((compose1
+            optimize
+            ;; Enable top-level optimization
+            (lambda (stx) #`(n:begin #,stx))
+            merge-operators
+            flatten-program)
+           #'program)))))
 ;; Optimized interposition points
 (define-syntax-parse-rule (reset)
   (o:cur 0))
@@ -355,6 +361,8 @@
     (let ((r (begin-reorder? stx-list)))
       (and r (zero? (cdr r)))))
 
+  (define reorder? (make-parameter #t))
+
   (define-splicing-syntax-class optimizer
     #:description "optimizer"
     #:literals (loop n:begin add sub shiftl shiftr read put)
@@ -371,18 +379,26 @@
              #:with optimized #`((loop/once #,(optimize #'(n:begin st ...)))))
     ;; Reordering
     (pattern (~seq (n:begin st ...))
+             #:when (reorder?)
              #:with optimized
              (let ((blocks (split-sequence/reordering #'(st ...))))
-               ((lambda (ll) #`(n:begin #,@(apply append (map syntax->list ll))))
+               ((lambda (ll) #`((n:begin #,@(apply append (map syntax->list ll)))))
                 (for/list ((b (in-list blocks)))
                   (if (eq? (car b) 'reorder)
-                      (let-values (((r closure suffix) (get/rest-closure-suffix #`(#,@(cdr b)))))
-                        #`((n:begin
-                            #,@(if (zero? r) #'() #`((o:cur (#,(o:dispatch-+ #`#,r) (o:cur) #,r))))
-                            #,((compose1 optimize merge-operators)
-                               #`(n:begin #,@(apply append closure)))
-                            #,(optimize #`(n:begin #,@(apply append suffix))))))
-                      #`(#,(optimize #`(n:begin #,@(cdr b)))))))))
+                      (let*-values (((r closure suffix) (get/rest-closure-suffix #`(#,@(cdr b))))
+                                    ((stop-reorder?) (and (= (length blocks) 1)
+                                                          (or (null? closure)
+                                                              (null? suffix)))))
+                        ;; Avoid infinite loops
+                        (parameterize ((reorder? (not stop-reorder?)))
+                          #`((n:begin
+                              #,@(if (zero? r) #'() #`((o:cur (#,(o:dispatch-+ #`#,r) (o:cur) #,r))))
+                              #,((compose1 optimize merge-operators)
+                                 #`(n:begin #,@(apply append closure)))
+                              #,(optimize #`(n:begin #,@(apply append suffix)))))))
+                      ;; Avoid infinite loops
+                      (parameterize ((reorder? (not (= (length blocks) 1))))
+                        #`(#,(optimize #`(n:begin #,@(cdr b))))))))))
     ;; Counter
     (pattern (~seq (loop st ...))
              #:when (loop-counter? #'(st ...))
@@ -395,7 +411,6 @@
     ;; Fallback
     (pattern (~seq (loop st ...))
              #:with optimized #`((loop #,(optimize #'(n:begin st ...)))))
-    ;; Actually this branch will never be reached because `merge-operators` won't insert `n:begin` in the body of `n:begin`
     (pattern (~seq (n:begin st ...) ot ...)
              #:with optimized #`(#,((compose1 optimize merge-operators) #'(n:begin st ... ot ...))))
     (pattern (~seq st)
@@ -406,7 +421,7 @@
     ((loop) #'(loop))
     ((n:begin) #'(n:begin))
     ((n:begin step0:optimizer step ...)
-     #`(n:begin #,@#'step0.optimized #,(optimize #'(n:begin step ...))))
+     #`(n:begin #,@#'step0.optimized #,(parameterize ((reorder? #t)) (optimize #'(n:begin step ...)))))
     ((loop step0:optimizer step ...)
-     #`(loop #,@#'step0.optimized #,(optimize #'(n:begin step ...))))
+     #`(loop #,@#'step0.optimized #,(parameterize ((reorder? #t)) (optimize #'(n:begin step ...)))))
     (ot #'ot)))
