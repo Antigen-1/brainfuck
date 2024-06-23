@@ -350,14 +350,14 @@
              (let-values (((r closure suffix) (get/rest-closure-suffix #'(st ...))))
                #`((n:begin
                    #,@(if (zero? r) #'() #`((o:cur (#,(o:dispatch-+ #`#,r) (o:cur) #,r))))
-                   (n:begin pre ...)
+                   pre ...
 
                    ;; st ...
                    #,((compose1 optimize merge-operators)
                       #`(n:begin #,@(apply append closure)))
                    #,@(if (null? suffix) #'() #`(#,(optimize #`(n:begin #,@(apply append suffix)))))
 
-                   (n:begin post ...)))))
+                   post ...))))
     ;; Counter
     (pattern (~seq (loop st ...))
              #:when (loop-counter? #'(st ...))
