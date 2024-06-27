@@ -3,7 +3,7 @@
          racket/unsafe/ops
          syntax/parse/define
          (for-syntax racket/base racket/fixnum))
-(provide add sub shiftr shiftl read put cur (for-syntax dispatch-+ dispatch--))
+(provide add sub shiftr shiftl read put cur (for-syntax dispatch-+ dispatch-- dispatch-and))
 
 ;; former current latter
 ;; (vector/c list? byte? list?)
@@ -34,6 +34,10 @@
     (if (andmap (compose1 fixnum-for-every-system? syntax->datum) ns)
         #'f:-
         #'n:-))
+  (define-for-syntax (dispatch-and . ns)
+    (if (andmap (compose1 fixnum-for-every-system? syntax->datum) ns)
+        #'unsafe-fxand
+        #'bitwise-and))
 
   ;; n: exact-positive-integer?
   (define-syntax-parser add

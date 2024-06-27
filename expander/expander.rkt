@@ -1,7 +1,7 @@
 #lang racket/base
 (require syntax/parse/define
          (prefix-in o: "data.rkt")
-         (for-syntax racket/base syntax/parse/define racket/list)
+         (for-syntax racket/base syntax/parse/define racket/list racket/match)
          (for-meta 2 racket/base))
 (provide program loopstart loopend slotop ptrop unit
          (rename-out (n:#%module-begin #%module-begin)))
@@ -50,8 +50,6 @@
       (let ()
         #,((compose1
             optimize
-            ;; Enable top-level optimization
-            (lambda (stx) #`(n:begin #,stx))
             merge-operators
             flatten-program)
            #'program)))))
@@ -222,6 +220,11 @@
     (pattern (~seq _:reset-loops _:reset-loop/add/sub-seq))
     (pattern (~seq _:add/sub _:reset-loop/add/sub-seq))
     (pattern (~seq)))
+  (define-syntax-class element->seq-helper
+    #:description "element->seq-helper"
+    #:literals (n:begin)
+    (pattern (n:begin st ...) #:with seq #'(st ...))
+    (pattern sst #:with seq #'(sst)))
 
   (define-for-syntax (make-id stx cls (base "_"))
     (datum->syntax
@@ -287,14 +290,16 @@
             (if merge? (cons #'st current) current)
             blocks
             (if (not merge?) (cons #'st updates) updates))))))
-  ;; (-> syntax? (values exact-nonnegative-integer? (listof (listof syntax?)) (listof (listof syntax?))))
+  ;; (-> syntax? (values (cons/c (or/c 'rel 'abs) exact-integer?)
+  ;;                     (listof (listof syntax?))
+  ;;                     (listof (listof syntax?))))
   (define (get/rest-closure-suffix stx-list)
     (let*-values (((rest blocks updates) (split-sequence/closure (syntax->list stx-list)))
                   ((r) (foldl (lambda (st cnt)
                                 (if (reset-loop? st)
-                                    0
-                                    (+ cnt (get-offset add/sub st))))
-                              0 updates))
+                                    '(abs . 0)
+                                    (cons (car cnt) (+ (cdr cnt) (get-offset add/sub st)))))
+                              '(rel . 0) updates))
                   ((closure suffix)
                    (split-at-right blocks (if (zero? rest) 0 1))))
       (values r closure suffix)))
@@ -367,21 +372,13 @@
     #:description "optimizer"
     #:literals (loop n:begin add sub shiftl shiftr read put)
     ;; Note: The order of optimizers matters
-    ;; Resetting
-    (pattern (~seq _:reset-loop/add/sub-seq
-                   _:reset-loops
-                   post:add/sub ...)
-             #:with optimized
-             (if (null? (syntax->datum #'(post ...)))
-                 #'((reset))
-                 #`(#,(merge-operators #'(n:begin post ...)))))
-    (pattern (~seq (loop st ... _:reset-loops))
-             #:with optimized #`((loop/once #,(optimize #'(n:begin st ...)))))
-    ;; Reordering
-    (pattern (~seq (n:begin st ...))
+    ;; Dispatcher
+    ;; Reordering is enabled for sequences
+    (pattern (~seq st:element->seq-helper ...+)
              #:when (reorder?)
              #:with optimized
-             (let ((blocks (split-sequence/reordering #'(st ...))))
+             (let ((blocks (split-sequence/reordering
+                            #`(#,@(apply append (map syntax->list (syntax->list #'(st.seq ...))))))))
                ((lambda (ll) #`((n:begin #,@(apply append (map syntax->list ll)))))
                 (for/list ((b (in-list blocks)))
                   (if (eq? (car b) 'reorder)
@@ -392,30 +389,45 @@
                         ;; Avoid infinite loops
                         (parameterize ((reorder? (not stop-reorder?)))
                           #`((n:begin
-                              #,@(if (zero? r) #'() #`((o:cur (#,(o:dispatch-+ #`#,r) (o:cur) #,r))))
+                              #,@(match r
+                                   ((cons 'rel 0) #'())
+                                   ((cons 'abs n) #`((o:cur (#,(o:dispatch-and #`#,n) #,n 255))))
+                                   ((cons 'rel n)
+                                    #`((o:cur (#,(o:dispatch-+ #`#,n) (o:cur) #,n)))))
                               #,((compose1 optimize merge-operators)
                                  #`(n:begin #,@(apply append closure)))
                               #,(optimize #`(n:begin #,@(apply append suffix)))))))
                       ;; Avoid infinite loops
                       (parameterize ((reorder? (not (= (length blocks) 1))))
                         #`(#,(optimize #`(n:begin #,@(cdr b))))))))))
+
+    ;; Resetting
+    (pattern (~seq _:reset-loop/add/sub-seq
+                   _:reset-loops
+                   post:add/sub ...)
+             #:with optimized
+             (if (null? (syntax->datum #'(post ...)))
+                 #'((reset))
+                 #`(#,(merge-operators #'(n:begin post ...)))))
     ;; Counter
     (pattern (~seq (loop st ...))
              #:when (loop-counter? #'(st ...))
              #:with optimized
-             (let-values (((r closure _) (get/rest-closure-suffix #'(st ...))))
-               #`((loop/counter
-                   #,r
-                   (#,((compose1 optimize merge-operators) #`(n:begin #,@(apply append closure))))))))
-
-    ;; Fallback
-    ;; Reordering is enabled for sequences
+             (let*-values (((r closure _) (get/rest-closure-suffix #'(st ...)))
+                           ((body) ((compose1 optimize merge-operators)
+                                    #`(n:begin (n:begin #,@(apply append closure))))))
+               (match r
+                 ((cons 'rel n)
+                  #`((loop/counter
+                      #,n
+                      (#,((compose1 optimize merge-operators) #`(n:begin #,@(apply append closure)))))))
+                 ((cons 'abs 0)
+                  #`((loop/once st ...)))
+                 ((cons 'abs n)
+                  #`((loop (o:cur (#,(o:dispatch-and #`#,n) #,n 255)) st ...))))))
+    ;; The body of ordinary loops
     (pattern (~seq (loop st ...))
-             #:with optimized #`((loop #,(optimize #'(n:begin (n:begin st ...))))))
-    (pattern (~seq (n:begin st ...) ot ...)
-             #:with optimized #`(#,((compose1 optimize merge-operators) #'(n:begin (n:begin st ... ot ...)))))
-    (pattern (~seq st)
-             #:with optimized #`(#,(optimize #'st)))))
+             #:with optimized #`((loop #,(optimize #'(n:begin st ...)))))))
 (define-for-syntax (optimize stx)
   (syntax-parse stx
     #:literals (loop n:begin)
