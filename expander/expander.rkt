@@ -431,7 +431,7 @@
              #:with optimized #`((loop #,(optimize #'(n:begin st ...)))))
 
     ;; Fallback
-    (pattern (~seq sst) #:with optimized #`#,(optimize #'sst))))
+    (pattern (~seq sst) #:with optimized #`(#,(optimize #'sst)))))
 (define-for-syntax (optimize stx)
   (syntax-parse stx
     #:literals (loop n:begin)
