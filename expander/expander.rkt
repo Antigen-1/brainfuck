@@ -409,10 +409,11 @@
                    (#,((compose1 optimize merge-operators) #`(n:begin #,@(apply append closure))))))))
 
     ;; Fallback
+    ;; Reordering is enabled for sequences
     (pattern (~seq (loop st ...))
-             #:with optimized #`((loop #,(optimize #'(n:begin st ...)))))
+             #:with optimized #`((loop #,(optimize #'(n:begin (n:begin st ...))))))
     (pattern (~seq (n:begin st ...) ot ...)
-             #:with optimized #`(#,((compose1 optimize merge-operators) #'(n:begin st ... ot ...))))
+             #:with optimized #`(#,((compose1 optimize merge-operators) #'(n:begin (n:begin st ... ot ...)))))
     (pattern (~seq st)
              #:with optimized #`(#,(optimize #'st)))))
 (define-for-syntax (optimize stx)
