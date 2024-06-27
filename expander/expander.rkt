@@ -391,6 +391,7 @@
                           #`((n:begin
                               #,@(match r
                                    ((cons 'rel 0) #'())
+                                   ((cons 'abs 0) #'((reset)))
                                    ((cons 'abs n) #`((o:cur (#,(o:dispatch-and #`#,n) #,n 255))))
                                    ((cons 'rel n)
                                     #`((o:cur (#,(o:dispatch-+ #`#,n) (o:cur) #,n)))))
@@ -427,7 +428,10 @@
                   #`((loop (o:cur (#,(o:dispatch-and #`#,n) #,n 255)) st ...))))))
     ;; The body of ordinary loops
     (pattern (~seq (loop st ...))
-             #:with optimized #`((loop #,(optimize #'(n:begin st ...)))))))
+             #:with optimized #`((loop #,(optimize #'(n:begin st ...)))))
+
+    ;; Fallback
+    (pattern (~seq sst) #:with optimized #`#,(optimize #'sst))))
 (define-for-syntax (optimize stx)
   (syntax-parse stx
     #:literals (loop n:begin)
